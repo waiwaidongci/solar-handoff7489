@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Rethink+Sans:wght@400;600;700&family=Fahkwang&display=swap');
+:root {
+  --text-font: 'Rethink Sans'; --title-font: 'Fahkwang';
+  --paper: oklch(.975 .012 99); --surface: oklch(.994 .006 99);
+  --ink: oklch(.235 .035 99); --quiet: oklch(.435 .038 99);
+  --stripe: oklch(.961 .014 99); --rule: oklch(.858 .024 99);
+  --accent: oklch(.445 0.101 99); --button-ink: oklch(.98 .007 99);
+  --focus: oklch(.64 0.101 99);
+  --side: oklch(.258 .041 99);
+  --side-ink: oklch(.975 .011 99);
+  --highlight: oklch(.36 .047 99);
+  --highlight-edge: oklch(.762 .096 99);
+  --side-width: 244px; --side-pad: 1.65rem;
+  --login-ratio: 1.52fr; --report-stripe: 9px;
+}
