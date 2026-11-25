@@ -7,6 +7,7 @@ from src.constants.enums import Role
 from src.controllers.query import delivery_status, jobs, recent_activity, require_row, revisions
 from src.models.tables import datasets, runs
 from src.schemas.requests import Delivery, Import, Login, Review, Run
+from src.services.calibration_store import list_calibrations
 from src.services.data import PROFILE, csv_records, save_revision
 from src.services.domain import sample_rows
 from src.services.workflow import add_run, cancel_schedule, review_run, schedule_report
@@ -53,6 +54,11 @@ def get_dataset(key: int, account=Depends(signed_in)):
     dataset = require_row(datasets, key, '数据版本')
     records = dataset.pop('records')
     return {**dataset, 'count': len(records), 'records': records[:100]}
+
+
+@router.get('/calibrations')
+def calibrations(dataset_id: int | None = None, account=Depends(signed_in)):
+    return {'calibrations': list_calibrations(dataset_id)}
 
 
 @router.post('/datasets', status_code=201)

@@ -61,6 +61,11 @@ figcaption {font-weight:700;margin-bottom:.55rem}
 .chart-track {background:var(--stripe);border-inline:1px solid var(--rule);height:10px;position:relative}
 .chart-track::before {content:'';position:absolute;inset-inline-start:50%;height:100%;border-inline-start:1px solid var(--rule)}
 .chart-track i {position:absolute;top:0;height:100%;background:var(--accent)}
+.calibration {border:1px solid var(--rule);border-radius:4px;padding:1rem 1.2rem;margin:1.2rem 0;background:var(--paper)}
+.calibration h3 {margin-top:0}
+.calibration h4 {margin:1rem 0 .45rem;font-size:.95rem;color:var(--quiet)}
+.calibration-ok {border-inline-start:4px solid oklch(.55 .13 150)}
+.calibration-fail {border-inline-start:4px solid oklch(.5 .18 25)}
 .login {min-height:100dvh;display:grid;grid-template-columns:minmax(0,var(--login-ratio)) minmax(245px,.85fr);align-items:center;gap:clamp(2rem,6vw,6rem);padding:clamp(2rem,8vw,8rem);max-width:1450px;margin:auto}
 .login-context {border-block:1px solid var(--rule);padding:3rem 0;max-width:65ch}
 .login-context h1 {font-size:clamp(2.65rem,5.1vw,5.05rem);margin:.5rem 0 1.5rem}

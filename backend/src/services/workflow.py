@@ -6,6 +6,7 @@ from sqlalchemy import and_, insert, or_, select, update
 from src.constants.enums import State
 from src.models.database import add_event, engine, fetch_one
 from src.models.tables import datasets, deliveries, runs, schedules
+from src.services.calibration_store import assert_run_current, basis_from_result
 from src.services.data import parse_options
 
 
@@ -16,7 +17,7 @@ def add_run(body, actor):
         if fetch_one(connection, datasets, body.dataset_id) is None:
             raise HTTPException(404, '数据版本不存在。')
         key = connection.execute(insert(runs).values(dataset_id=body.dataset_id, options=options,
-                    state=State.queued.value, owner=actor, created=now)).inserted_primary_key[0]
+                    state=State.queued.value, owner=actor, created=now, calibration_stale=0)).inserted_primary_key[0]
         add_event(connection, actor, 'queue', key, now)
     return {'id': key, 'state': State.queued.value}
 
@@ -41,9 +42,13 @@ def finish_run(key, claim, result, error):
     now = time.time()
     state = State.failed.value if error else State.completed.value
     with engine.begin() as connection:
+        values = {'state': state, 'result': result, 'error': error, 'finished': now}
+        if result is not None:
+            # 计算结果绑定复核时刻的校时依据版本，作为后续失效判断的基准。
+            values['calibration_version'] = result.get('calibration_version')
+            values['calibration_basis'] = basis_from_result(result)
         saved = connection.execute(update(runs).where(runs.c.id == key, runs.c.started == claim,
-                                   runs.c.state == State.running.value).values(state=state, result=result,
-                                                  error=error, finished=now))
+                                   runs.c.state == State.running.value).values(**values))
         if saved.rowcount:
             add_event(connection, 'worker', state, key, now)
 
@@ -59,12 +64,14 @@ def review_run(key, body, actor):
             raise HTTPException(404, '分析任务不存在。')
         if run['state'] != State.completed.value:
             raise HTTPException(409, '分析完成后才能复核。')
+        assert_run_current(connection, run)
         if body.decision == 'approved' and run['result'].get('can_publish') is False:
-            raise HTTPException(409, '结果未达到本项目的发布门槛。')
-        updated = connection.execute(update(runs).where(runs.c.id == key, runs.c.decision.is_(None))
+            raise HTTPException(409, '结果未达到本项目的发布门槛（含全偏移组合门槛）。')
+        updated = connection.execute(update(runs).where(runs.c.id == key, runs.c.decision.is_(None),
+                                                        runs.c.calibration_stale == 0)
                                      .values(decision=body.decision, reviewer=actor, review_note=note, reviewed=now))
         if updated.rowcount != 1:
-            raise HTTPException(409, '已完成复核。请重新运行分析以提交新的复核。')
+            raise HTTPException(409, '已完成复核或依据已失效。请重新运行分析以提交新的复核。')
         add_event(connection, actor, body.decision, key, now)
     return {'decision': body.decision}
 
@@ -83,11 +90,13 @@ def schedule_report(key, body, actor):
         run = fetch_one(connection, runs, key)
         if run is None or run['decision'] != 'approved':
             raise HTTPException(409, '仅已批准的结果可分发。')
+        assert_run_current(connection, run)
         required_recipient = run['result'].get('dispatch_recipient')
         if required_recipient and recipient != required_recipient:
             raise HTTPException(422, f'该报告应投递给{required_recipient}。')
         schedule_id = connection.execute(insert(schedules).values(run_id=key, recipient=recipient, cadence=body.cadence,
-                                      next_at=timestamp, active=1, owner=actor)).inserted_primary_key[0]
+                                      next_at=timestamp, active=1, owner=actor,
+                                      calibration_version=run['calibration_version'])).inserted_primary_key[0]
         add_event(connection, actor, 'schedule', schedule_id, now)
     return {'id': schedule_id, 'next_at': timestamp}
 
@@ -111,9 +120,17 @@ def publish_due():
             previous = item['next_at']
             daily = item['cadence'] == 'daily'
             future = previous + (int((now - previous) / 86400) + 1) * 86400 if daily else previous
+            run = fetch_one(connection, runs, item['run_id'])
+            if run is not None and run['calibration_stale'] == 1:
+                # 投递前最后一道防线：版本更新后待发计划立即停用，旧版本不能恢复资格。
+                connection.execute(update(schedules).where(schedules.c.id == item['id'], schedules.c.active == 1)
+                                   .values(active=0))
+                add_event(connection, 'worker', 'cancel', item['id'], now)
+                continue
             changed = connection.execute(update(schedules).where(schedules.c.id == item['id'], schedules.c.active == 1,
                               schedules.c.next_at == previous).values(active=int(daily), next_at=future))
             if changed.rowcount:
                 delivery_id = connection.execute(insert(deliveries).values(schedule_id=item['id'], run_id=item['run_id'],
-                                               recipient=item['recipient'], scheduled=previous, delivered=now)).inserted_primary_key[0]
+                                               recipient=item['recipient'], scheduled=previous, delivered=now,
+                                               calibration_version=item['calibration_version'])).inserted_primary_key[0]
                 add_event(connection, 'worker', 'delivered', delivery_id, now)
